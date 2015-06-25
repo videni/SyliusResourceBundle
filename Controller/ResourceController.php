@@ -182,7 +182,7 @@ class ResourceController extends FOSRestController
         $form = $this->getForm($resource);
 
         if ($request->isMethod('POST') && $form->submit($request)->isValid()) {
-            $resource = $this->domainManager->create($resource);
+            $resource = $this->domainManager->create($form->getData());
 
             if ($this->config->isApiRequest()) {
                 if ($resource instanceof ResourceEvent) {
@@ -438,7 +438,6 @@ class ResourceController extends FOSRestController
                 )
             );
         }
-
         return $resource;
     }
 
@@ -493,16 +492,21 @@ class ResourceController extends FOSRestController
         return $handler->handle($view);
     }
 
-    protected function isGrantedOr403($permission)
+    protected function isGrantedOr403($defaultPermission)
     {
         if (!$this->container->has('sylius.authorization_checker')) {
             return true;
         }
 
-        $permission = $this->config->getPermission($permission);
-
-        if ($permission && !$this->get('sylius.authorization_checker')->isGranted(sprintf('%s.%s.%s', $this->config->getBundlePrefix(), $this->config->getResourceName(), $permission))) {
-            throw new AccessDeniedException();
+        if($defaultPermission)
+        {
+            $permission = $this->config->getPermission($defaultPermission);
+            //when the manual one is different from the default one, it means the developer want the manual one to work.
+            //@todo: find a better way to resolve this variation
+            $grant=$permission!==$defaultPermission? $permission: sprintf('%s.%s.%s', $this->config->getBundlePrefix(), $this->config->getResourceName(), $permission);
+            if ($permission && !$this->get('sylius.authorization_checker')->isGranted($grant)) {
+                throw new AccessDeniedException(sprintf('Access denied to "%s" for "%s".', $grant, $this->getUser() ? $this->getUser()->getUsername() : 'anon.'));
+            }
         }
     }
 }
