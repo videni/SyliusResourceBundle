@@ -288,10 +288,32 @@ class ResourceController extends FOSRestController
      *
      * @return RedirectResponse
      */
+    public function enableAction(Request $request)
+    {
+        return $this->toggle($request, true);
+    }
+
+    /**
+     * @param Request $request
+     *
+     * @return RedirectResponse
+     */
+    public function disableAction(Request $request)
+    {
+        return $this->toggle($request, false);
+    }
+
+    /**
+     * @param Request $request
+     *
+     * @return RedirectResponse
+     */
     public function restoreAction(Request $request)
     {
         $this->get('doctrine')->getManager()->getFilters()->disable('softdeleteable');
         $resource = $this->findOr404($request);
+        $this->get('doctrine')->getManager()->getFilters()->enable('softdeleteable');
+        
         $resource->setDeletedAt(null);
 
         $this->domainManager->update($resource, 'restore_deleted');
@@ -382,10 +404,11 @@ class ResourceController extends FOSRestController
 
     /**
      * @param object|null $resource
+     * @param array       $options
      *
      * @return FormInterface
      */
-    public function getForm($resource = null)
+    public function getForm($resource = null, array $options = array())
     {
         $type = $this->config->getFormType();
 
@@ -399,10 +422,10 @@ class ResourceController extends FOSRestController
         }
 
         if ($this->config->isApiRequest()) {
-            return $this->container->get('form.factory')->createNamed('', $type, $resource, array('csrf_protection' => false));
+            return $this->container->get('form.factory')->createNamed('', $type, $resource, array_merge($options, array('csrf_protection' => false)));
         }
 
-        return $this->createForm($type, $resource);
+        return $this->createForm($type, $resource, $options);
     }
 
     /**
@@ -473,6 +496,32 @@ class ResourceController extends FOSRestController
     }
 
     /**
+     * @param Request $request
+     * @param boolean $enabled
+     *
+     * @return RedirectResponse|Response
+     */
+    protected function toggle(Request $request, $enabled)
+    {
+        $this->isGrantedOr403('update');
+
+        $resource = $this->findOr404($request);
+        $resource->setEnabled($enabled);
+
+        $this->domainManager->update($resource, $enabled ? 'enable' : 'disable');
+
+        if ($this->config->isApiRequest()) {
+            if ($resource instanceof ResourceEvent) {
+                throw new HttpException($resource->getErrorCode(), $resource->getMessage());
+            }
+
+            return $this->handleView($this->view($resource, 204));
+        }
+
+        return $this->redirectHandler->redirectToIndex();
+    }
+
+    /**
      * @return PagerfantaFactory
      */
     protected function getPagerfantaFactory()
@@ -488,6 +537,8 @@ class ResourceController extends FOSRestController
         if ($version = $this->config->getSerializationVersion()) {
             $handler->setExclusionStrategyVersion($version);
         }
+
+        $view->getSerializationContext()->enableMaxDepthChecks();
 
         return $handler->handle($view);
     }
